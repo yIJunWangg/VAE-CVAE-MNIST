@@ -9,6 +9,7 @@ from torchvision import transforms
 from torchvision.datasets import MNIST
 from torch.utils.data import DataLoader
 from collections import defaultdict
+import dataloaders.dataloaders as dataloaders
 
 from models import VAE
 
@@ -23,15 +24,17 @@ def main(args):
 
     ts = time.time()
 
-    dataset = MNIST(
-        root='data', train=True, transform=transforms.ToTensor(),
-        download=True)
-    data_loader = DataLoader(
-        dataset=dataset, batch_size=args.batch_size, shuffle=True)
+    dataloader,dataloader_val =  dataloaders.get_dataloaders(args)
+    
+    # dataset = MNIST(
+    #     root='data', train=True, transform=transforms.ToTensor(),
+    #     download=True)
+    # data_loader = DataLoader(
+    #     dataset=dataset, batch_size=args.batch_size, shuffle=True)
 
     def loss_fn(recon_x, x, mean, log_var):
         BCE = torch.nn.functional.binary_cross_entropy(
-            recon_x.view(-1, 28*28), x.view(-1, 28*28), reduction='sum')
+            recon_x.view(-1, 512*512), x.view(-1, 512*512), reduction='sum')
         KLD = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp())
 
         return (BCE + KLD) / x.size(0)
@@ -41,7 +44,7 @@ def main(args):
         latent_size=args.latent_size,
         decoder_layer_sizes=args.decoder_layer_sizes,
         conditional=args.conditional,
-        num_labels=10 if args.conditional else 0).to(device)
+        num_labels=5 if args.conditional else 0).to(device)
 
     optimizer = torch.optim.Adam(vae.parameters(), lr=args.learning_rate)
 
@@ -51,7 +54,9 @@ def main(args):
 
         tracker_epoch = defaultdict(lambda: defaultdict(dict))
 
-        for iteration, (x, y) in enumerate(data_loader):
+        for iteration, batch in enumerate(dataloader):
+            x =batch['label_xpl']
+            y = batch['sem_cond'] if args.conditional else None
 
             x, y = x.to(device), y.to(device)
 
@@ -64,7 +69,7 @@ def main(args):
                 id = len(tracker_epoch)
                 tracker_epoch[id]['x'] = z[i, 0].item()
                 tracker_epoch[id]['y'] = z[i, 1].item()
-                tracker_epoch[id]['label'] = yi.item()
+                # tracker_epoch[id]['label'] = yi.item()
 
             loss = loss_fn(recon_x, x, mean, log_var)
 
@@ -74,9 +79,9 @@ def main(args):
 
             logs['loss'].append(loss.item())
 
-            if iteration % args.print_every == 0 or iteration == len(data_loader)-1:
+            if iteration % args.print_every == 0 or iteration == len(dataloader)-1:
                 print("Epoch {:02d}/{:02d} Batch {:04d}/{:d}, Loss {:9.4f}".format(
-                    epoch, args.epochs, iteration, len(data_loader)-1, loss.item()))
+                    epoch, args.epochs, iteration, len(dataloader)-1, loss.item()))
 
                 if args.conditional:
                     c = torch.arange(0, 10).long().unsqueeze(1).to(device)
@@ -125,12 +130,23 @@ if __name__ == '__main__':
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--learning_rate", type=float, default=0.001)
-    parser.add_argument("--encoder_layer_sizes", type=list, default=[784, 256])
-    parser.add_argument("--decoder_layer_sizes", type=list, default=[256, 784])
-    parser.add_argument("--latent_size", type=int, default=2)
+    parser.add_argument("--encoder_layer_sizes", type=list, default=[512*512, 256])
+    parser.add_argument("--decoder_layer_sizes", type=list, default=[256, 512*512])
+    parser.add_argument("--latent_size", type=int, default=5)
     parser.add_argument("--print_every", type=int, default=100)
     parser.add_argument("--fig_root", type=str, default='figs')
     parser.add_argument("--conditional", action='store_true')
+    parser.add_argument("--dataroot", type=str, default='/mnt/windows_F/wyj_project/PetroSynthGAN/datasets/rock')
+    parser.add_argument("--name", type=str, default='custom')
+    parser.add_argument("--dataset_mode", type=str, default='custom')
+    parser.add_argument("--class_dir", type=str, default='/mnt/windows_F/wyj_project/PetroSynthGAN/datasets/rock/class.txt')
+    parser.add_argument("--phase", type=str, default='train')
+    parser.add_argument("--num_workers", type=int, default=4)
+    parser.add_argument("--num_semantics", type=float, default=5)
+    parser.add_argument("--label_unknown", type=int, default=0)
+    parser.add_argument('--load_size', type=int, default=512, help='scale images to this size')
+    parser.add_argument('--crop_size', type=int, default=512, help='then crop to this size')
+    parser.add_argument('--no_flip', action='store_true', help='if specified, do not flip the images for data argumentation')
 
     args = parser.parse_args()
 

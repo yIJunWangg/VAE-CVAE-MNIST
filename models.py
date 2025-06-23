@@ -28,7 +28,7 @@ class VAE(nn.Module):
     def forward(self, x, c=None):
 
         if x.dim() > 2:
-            x = x.view(-1, 28*28)
+            x = x.view(-1, 512*512)
 
         means, log_var = self.encoder(x, c)
         z = self.reparameterize(means, log_var)
@@ -73,7 +73,7 @@ class Encoder(nn.Module):
     def forward(self, x, c=None):
 
         if self.conditional:
-            c = idx2onehot(c, n=10)
+            # c = idx2onehot(c, n=10)
             x = torch.cat((x, c), dim=-1)
 
         x = self.MLP(x)
@@ -93,12 +93,11 @@ class Decoder(nn.Module):
         self.MLP = nn.Sequential()
 
         self.conditional = conditional
+            
         if self.conditional:
-            input_size = latent_size + num_labels
-        else:
-            input_size = latent_size
+            layer_sizes[0] += num_labels
 
-        for i, (in_size, out_size) in enumerate(zip([input_size]+layer_sizes[:-1], layer_sizes)):
+        for i, (in_size, out_size) in enumerate(zip(layer_sizes[:-1], layer_sizes[1:])):
             self.MLP.add_module(
                 name="L{:d}".format(i), module=nn.Linear(in_size, out_size))
             if i+1 < len(layer_sizes):
@@ -109,7 +108,7 @@ class Decoder(nn.Module):
     def forward(self, z, c):
 
         if self.conditional:
-            c = idx2onehot(c, n=10)
+            # c = idx2onehot(c, n=10)
             z = torch.cat((z, c), dim=-1)
 
         x = self.MLP(z)
